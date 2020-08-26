@@ -31,7 +31,9 @@ public class RunController implements ResourceController<RunResource> {
     private final String ENVIRONMENT_RUN_PIPE_NAME = "RUN_PIPE";
 
     private final String METADATA_LABEL_RUN_NUMBER_KEY = "tdaq.run-number";
-    private final String METADATA_LABEL_RUN_PIPE_KEY = "tdaq.run-number";
+    private final String METADATA_LABEL_RUN_PIPE_KEY = "tdaq.run-pipe";
+    private final String METADATA_LABEL_TDAQ_WORKER_KEY = "tdaq.worker";
+    private final String METADATA_LABEL_TDAQ_WORKER_VALUE = "true";
 
     @NotNull
     public RunController(KubernetesClient kubernetesClient) {
@@ -80,14 +82,14 @@ public class RunController implements ResourceController<RunResource> {
 
     /**
      * Finds the largest RunNumber in the cluster and returns it.
-     * Finds the number based on metadata labels for each Pod in the "default" namespace.
-     * @return The largest RunNumber of any deployment in the clusters "default" namespace
+     * Finds the number based on metadata labels for each Pod that have the tdaq-worker label
+     * @return The largest (aka latest) RunNumber of any deployment in the clusters that have the tdaq-worker label
      */
     private int getLatestDeploymentRunNumberDeployed() {
         int largestRunNumber = -1;
-        DeploymentList deploymentList = kubernetesClient.apps().deployments().inNamespace("default").list(); /* TODO: fix namespace. get it from ... ? */
+        DeploymentList deploymentList = kubernetesClient.apps().deployments().inAnyNamespace().withLabel(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE).list();
         for (Deployment deployment : deploymentList.getItems()) {
-            String runNumberAsString = deployment.getMetadata().getLabels().getOrDefault(ENVIRONMENT_RUN_NUMBER_NAME, "-1");
+            String runNumberAsString = deployment.getMetadata().getLabels().getOrDefault(METADATA_LABEL_RUN_NUMBER_KEY, "-1");
             try {
                 int deploymentRunNumber = Integer.parseInt(runNumberAsString);
                 if (largestRunNumber < deploymentRunNumber) {
@@ -110,8 +112,7 @@ public class RunController implements ResourceController<RunResource> {
      * @param runPipeName The current RunPipe type as fetched from the CR
      * @throws IOException If unable to read the yaml file from /resources
      */
-    @NotNull
-    private void createNewDeployment(int runNumber, String runPipeName) throws IOException {
+    private void createNewDeployment(int runNumber, @NotNull String runPipeName) throws IOException {
         String deploymentYamlPath = "run-deployment.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
         try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
             Deployment newRunDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
@@ -121,6 +122,7 @@ public class RunController implements ResourceController<RunResource> {
             final String runNumberAsString = Integer.toString(runNumber);
             labels.put(METADATA_LABEL_RUN_NUMBER_KEY, runNumberAsString);
             labels.put(METADATA_LABEL_RUN_PIPE_KEY, runPipeName);
+            labels.put(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE);
             newRunDeployment.getMetadata().setLabels(labels);
 
             EnvVar envVarRunNumber = new EnvVar();
@@ -151,7 +153,11 @@ public class RunController implements ResourceController<RunResource> {
             String newRunDeploymentName = generateNewRunDeploymentName(newRunDeployment, runNumber, runPipeName);
             newRunDeployment.getMetadata().setName(newRunDeploymentName);
 
-            Deployment createdDeployment = kubernetesClient.apps().deployments().inNamespace(newRunDeployment.getMetadata().getNamespace()).create(newRunDeployment);
+            String namespace = newRunDeployment.getMetadata().getNamespace();
+            if (namespace == null || namespace.isEmpty()) {
+                namespace = "default";
+            }
+            Deployment createdDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).create(newRunDeployment);
 
             log.info("Created deployment: {}", deploymentYamlPath);
         } catch (IOException ex) {
@@ -162,21 +168,18 @@ public class RunController implements ResourceController<RunResource> {
 
     /**
      * Deletes all deployments where all the pods are finished running.
-     * NOTE: We assume the Pods terminate and are not rebooted after they exit/are finished. Probably use policty: OnFailure. Read more here:
+     * NOTE: We assume the Pods terminate and are not rebooted after they exit/are finished. Probably use policy: OnFailure. Read more here:
      *  https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
      *  https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template
-     * @throws IOException If unable to read the yaml file from /resources
      */
-    @NotNull
     private void deleteFinishedDeployments() {
         /**
-         *  NOTE: If we have too many Pods (more than 10 000(???)) in the same namespace, it could cause a timeout problem when we query the API Server
+         *  NOTE: If we query too many Pods at once (more than 10 000(???)), it could cause a timeout problem when we query the API Server
          *  The SIG-Scalability group should have some answers regarding this. Check out their video from KubeCon December/September 2018 on YouTube.
          *
-         *  Instead we could query based on labels? But then we have to be sure we will not miss deployments for a certain run!
+         *  Instead we could query based on namespaces or more refined labels? But then we have to be sure we will not miss deployments for a certain run!
          */
-        String namespace = "default"; /* TODO: fix namespace. get it from ... ? */
-        DeploymentList deploymentList = kubernetesClient.apps().deployments().inNamespace(namespace).list();
+        DeploymentList deploymentList = kubernetesClient.apps().deployments().inAnyNamespace().withLabel(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE).list();
         for (Deployment deployment : deploymentList.getItems()) {
             /**
              * TODO: Test which of these replica count values are the one I want to use!?
@@ -201,6 +204,7 @@ public class RunController implements ResourceController<RunResource> {
                     && currentReplicas == 0
             ) {
                 String deploymentName = deployment.getMetadata().getName();
+                String namespace = deployment.getMetadata().getNamespace();
                 Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
                 if (!isDeleted) {
                     /**
@@ -221,12 +225,11 @@ public class RunController implements ResourceController<RunResource> {
      * Returns false if the deployment given as parameter is the current latest deployed deployment.
      * This is done by matching the RunNumber in Deployment against the "currentRunNumber" value.
      * NOTE: for this to work, runNumberPaddingSize must be the same as used in the actual deployment name!
-     * @param deployment
-     * @param currentRunNumber
+     * @param deployment The deployment to check against the RunNumber
+     * @param currentRunNumber The latest RunNumber
      * @return False if deployment is the current deployment, True otherwise
      */
-    @NotNull
-    private boolean isNotCurrentDeployment(Deployment deployment, int currentRunNumber) {
+    private boolean isNotCurrentDeployment(@NotNull Deployment deployment, int currentRunNumber) {
         return !isCurrentDeployment(deployment, currentRunNumber);
     }
 
@@ -234,12 +237,11 @@ public class RunController implements ResourceController<RunResource> {
      * Returns true if the deployment given as parameter is the current latest deployed deployment.
      * This is done by matching the RunNumber in Deployment against the "currentRunNumber" value.
      * NOTE: for this to work, runNumberPaddingSize must be the same as used in the actual deployment name!
-     * @param deployment
-     * @param currentRunNumber
+     * @param deployment The deployment to check against the RunNumber
+     * @param currentRunNumber The latest RunNumber
      * @return True if deployment is the current deployment, False otherwise
      */
-    @NotNull
-    private boolean isCurrentDeployment(Deployment deployment, int currentRunNumber) {
+    private boolean isCurrentDeployment(@NotNull Deployment deployment, int currentRunNumber) {
         String deploymentName = deployment.getMetadata().getName();
         String formattedRunNumber = String.format("%0" + runNumberPaddingSize + "d", currentRunNumber);
         return deploymentName.contains(formattedRunNumber);
