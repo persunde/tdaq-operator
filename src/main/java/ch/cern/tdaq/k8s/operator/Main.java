@@ -27,7 +27,7 @@ public class Main {
         Operator operator = new Operator(client);
         GenericRetry retry = GenericRetry.every10second10TimesRetry(); /* On Failure: retries every 10 second, and max 10 times, you can customize this yourself if you want */
 
-        CustomServiceController controller = new CustomServiceController(client);
+        RunController controller = new RunController(client);
         operator.registerControllerForAllNamespaces(controller, retry);
 
         /**
