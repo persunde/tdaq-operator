@@ -1,6 +1,7 @@
 package ch.cern.tdaq.k8s.operator;
 
 import ch.cern.tdaq.k8s.operator.CustomResource.RunResource;
+
 import com.github.containersolutions.operator.api.Context;
 import com.github.containersolutions.operator.api.Controller;
 import com.github.containersolutions.operator.api.ResourceController;
@@ -16,7 +17,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -68,7 +68,12 @@ public class RunController implements ResourceController<RunResource> {
             }
         }
 
-        deleteFinishedDeployments(latestRunNumber);
+        /* Deletes all deployments where all the Pods in the deployment have finished/exited */
+        deleteFinishedDeployments();
+
+        /**
+         * TODO: add some notes/log to the status of the resource, to make it descriptive when queried by a human
+         */
 
         return UpdateControl.updateCustomResource(resource);
     }
@@ -156,15 +161,14 @@ public class RunController implements ResourceController<RunResource> {
     }
 
     /**
-     * Deletes deployment running Pods with a RunNumber thats older than currentRunNumber, if all the pods are completed
+     * Deletes all deployments where all the pods are finished running.
      * NOTE: We assume the Pods terminate and are not rebooted after they exit/are finished. Probably use policty: OnFailure. Read more here:
      *  https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
      *  https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template
-     * @param currentRunNumber The RunNumber of the latest run
      * @throws IOException If unable to read the yaml file from /resources
      */
     @NotNull
-    private void deleteFinishedDeployments(int currentRunNumber) {
+    private void deleteFinishedDeployments() {
         /**
          *  NOTE: If we have too many Pods (more than 10 000(???)) in the same namespace, it could cause a timeout problem when we query the API Server
          *  The SIG-Scalability group should have some answers regarding this. Check out their video from KubeCon December/September 2018 on YouTube.
@@ -195,7 +199,6 @@ public class RunController implements ResourceController<RunResource> {
              */
             if (    currentReplicas != null
                     && currentReplicas == 0
-                    && isNotCurrentDeployment(deployment, currentRunNumber)
             ) {
                 String deploymentName = deployment.getMetadata().getName();
                 Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
