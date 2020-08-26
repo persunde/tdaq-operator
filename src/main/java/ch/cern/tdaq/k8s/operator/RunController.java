@@ -68,7 +68,7 @@ public class RunController implements ResourceController<RunResource> {
             }
         }
 
-        deleteOldDeploymentIfFinished(latestRunNumber);
+        deleteFinishedDeployments(latestRunNumber);
 
         return UpdateControl.updateCustomResource(resource);
     }
@@ -164,7 +164,7 @@ public class RunController implements ResourceController<RunResource> {
      * @throws IOException If unable to read the yaml file from /resources
      */
     @NotNull
-    private void deleteOldDeploymentIfFinished(int currentRunNumber) {
+    private void deleteFinishedDeployments(int currentRunNumber) {
         /**
          *  NOTE: If we have too many Pods (more than 10 000(???)) in the same namespace, it could cause a timeout problem when we query the API Server
          *  The SIG-Scalability group should have some answers regarding this. Check out their video from KubeCon December/September 2018 on YouTube.
