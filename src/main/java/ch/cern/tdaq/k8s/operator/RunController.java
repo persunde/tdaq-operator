@@ -27,13 +27,13 @@ public class RunController implements ResourceController<RunResource> {
     private final KubernetesClient kubernetesClient;
     private final int runNumberPaddingSize = 100000;
 
-    private final String ENVIRONMENT_RUN_NUMBER_NAME = "RUN_NUMBER";
-    private final String ENVIRONMENT_RUN_PIPE_NAME = "RUN_PIPE";
+    private static final String ENVIRONMENT_RUN_NUMBER_NAME = "RUN_NUMBER";
+    private static final String ENVIRONMENT_RUN_PIPE_NAME = "RUN_PIPE";
 
-    private final String METADATA_LABEL_RUN_NUMBER_KEY = "tdaq.run-number";
-    private final String METADATA_LABEL_RUN_PIPE_KEY = "tdaq.run-pipe";
-    private final String METADATA_LABEL_TDAQ_WORKER_KEY = "tdaq.worker";
-    private final String METADATA_LABEL_TDAQ_WORKER_VALUE = "true";
+    private static final String METADATA_LABEL_RUN_NUMBER_KEY = "tdaq.run-number";
+    private static final String METADATA_LABEL_RUN_PIPE_KEY = "tdaq.run-pipe";
+    private static final String METADATA_LABEL_TDAQ_WORKER_KEY = "tdaq.worker";
+    private static final String METADATA_LABEL_TDAQ_WORKER_VALUE = "true";
 
     @NotNull
     public RunController(KubernetesClient kubernetesClient) {
@@ -71,7 +71,10 @@ public class RunController implements ResourceController<RunResource> {
         }
 
         /* Deletes all deployments where all the Pods in the deployment have finished/exited */
-        deleteFinishedDeployments();
+        /**
+         * Add back deleteFinishedDeployments() once java-operator-sdk support looping after X time
+         */
+        /* deleteFinishedDeployments(); */
 
         /**
          * TODO: add some notes/log to the status of the resource, to make it descriptive when queried by a human
@@ -171,8 +174,12 @@ public class RunController implements ResourceController<RunResource> {
      * NOTE: We assume the Pods terminate and are not rebooted after they exit/are finished. Probably use policy: OnFailure. Read more here:
      *  https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
      *  https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template
+     *
+     * TODO: Make this non-static once the java-operator-sdk has support for looping after X time
+     *  See: https://github.com/ContainerSolutions/java-operator-sdk/issues/157
+     *  Set the function back to private, once it is looping as part of createOrUpdateResource()!
      */
-    private void deleteFinishedDeployments() {
+    public static void deleteFinishedDeployments(final KubernetesClient kubernetesClient) {
         /**
          *  NOTE: If we query too many Pods at once (more than 10 000(???)), it could cause a timeout problem when we query the API Server
          *  The SIG-Scalability group should have some answers regarding this. Check out their video from KubeCon December/September 2018 on YouTube.
