@@ -191,33 +191,37 @@ public class RunController implements ResourceController<RunResource> {
             /**
              * TODO: Test which of these replica count values are the one I want to use!?
              */
-            Integer currentReplicas = deployment.getStatus().getReplicas(); /* This should be currently running, bad and good. Probably the one I want, but make sure and test it!! */
-            /*
-            deployment.getStatus().getAvailableReplicas();
-            deployment.getStatus().getReadyReplicas();
-            deployment.getStatus().getUnavailableReplicas();
-            deployment.getStatus().getUpdatedReplicas();
-            DeploymentStatus stat = deployment.getStatus();
-             */
+            try {
+                Integer currentReplicas = deployment.getStatus().getReplicas(); /* This should be currently running, bad and good. Probably the one I want, but make sure and test it!! */
+                /*
+                deployment.getStatus().getAvailableReplicas();
+                deployment.getStatus().getReadyReplicas();
+                deployment.getStatus().getUnavailableReplicas();
+                deployment.getStatus().getUpdatedReplicas();
+                DeploymentStatus stat = deployment.getStatus();
+                 */
 
-            /*
-            deployment.getSpec().getReplicas(); // This probably has the originally deployed number of replicas. Probably not the one we want.
-            */
+                /*
+                deployment.getSpec().getReplicas(); // This probably has the originally deployed number of replicas. Probably not the one we want.
+                */
 
-            /**
-             * TODO: Unsure about how to handle null values. What does "null" mean? That the value is inaccessible, should we delete or not when null?
-             */
-            if (    currentReplicas != null
-                    && currentReplicas == 0
-            ) {
-                String deploymentName = deployment.getMetadata().getName();
-                String namespace = deployment.getMetadata().getNamespace();
-                Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
-                if (!isDeleted) {
-                    /**
-                     * TODO: What to do on failure to delete Deployment? Just accept for now and try again?
-                     */
+                /**
+                 * TODO: Unsure about how to handle null values. What does "null" mean? That the value is inaccessible, unknown or just does not exists in the cluster? Should we delete or not when null?
+                 */
+                if (currentReplicas != null
+                        && currentReplicas.intValue() == 0
+                ) {
+                    String deploymentName = deployment.getMetadata().getName();
+                    String namespace = deployment.getMetadata().getNamespace();
+                    Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
+                    if (!isDeleted) {
+                        /**
+                         * TODO: What to do on failure to delete Deployment? Just accept for now and try again later?
+                         */
+                    }
                 }
+            } catch (NullPointerException e) {
+                e.printStackTrace();
             }
         }
     }
