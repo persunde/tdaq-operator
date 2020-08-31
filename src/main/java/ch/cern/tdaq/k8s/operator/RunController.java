@@ -116,7 +116,7 @@ public class RunController implements ResourceController<RunResource> {
      * @throws IOException If unable to read the yaml file from /resources
      */
     private void createNewDeployment(int runNumber, @NotNull String runPipeName) throws IOException {
-        String deploymentYamlPath = "run-deployment.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
+        String deploymentYamlPath = "deploy-webclient.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
         try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
             Deployment newRunDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
 
