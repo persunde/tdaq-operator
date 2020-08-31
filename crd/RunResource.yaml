@@ -1,0 +1,11 @@
+apiVersion: "operator.tdaq.cern.ch/v1"
+kind: RunResource
+metadata:
+  name: run-resource1
+spec:
+  name: to-be-changed-resource1
+  label: to-be-changed-label
+  runNumber: 0
+  runPipe:
+status:
+  isRunFinished: false

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webclient-tdaq
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      run: webclient-tdaq
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: webclient-tdaq
+    spec:
+      containers:
+        - name: webclient-tdaq
+          image: persundecern/webclient-tdaq
+          resources:
+            limits:
+              cpu: 200m
+            requests:
+              cpu: 200m

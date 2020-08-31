@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webserver-tdaq
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      run: webserver-tdaq
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: webserver-tdaq
+    spec:
+      containers:
+        - name: webserver-tdaq
+          image: persundecern/webserver-tdaq
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: 1000m
+            requests:
+              cpu: 1000m
