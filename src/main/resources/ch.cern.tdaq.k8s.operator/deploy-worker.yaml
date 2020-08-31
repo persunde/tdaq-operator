@@ -13,6 +13,7 @@ spec:
       labels:
         run: worker-tdaq
     spec:
+      restartPolicy: OnFailure
       containers:
         - name: worker-tdaq
           image: persundecern/webclient-tdaq

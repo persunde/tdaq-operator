@@ -17,11 +17,13 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @Controller(customResourceClass = RunResource.class,
-        crdName = "runresource.operator.tdaq.cern.ch")
+        crdName = "runresources.operator.tdaq.cern.ch")
 public class RunController implements ResourceController<RunResource> {
     private final Logger log = LoggerFactory.getLogger(getClass());
     private final KubernetesClient kubernetesClient;
@@ -116,12 +118,15 @@ public class RunController implements ResourceController<RunResource> {
      * @throws IOException If unable to read the yaml file from /resources
      */
     private void createNewDeployment(int runNumber, @NotNull String runPipeName) throws IOException {
-        String deploymentYamlPath = "deploy-webclient.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
+        String deploymentYamlPath = "deploy-worker.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
         try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
             Deployment newRunDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
 
             /* Set the metadata labels tdaq.run-number and tdaq.run-pipe for this deployment */
             Map<String, String> labels = newRunDeployment.getMetadata().getLabels();
+            if (labels == null) {
+                labels = new HashMap<>();
+            }
             final String runNumberAsString = Integer.toString(runNumber);
             labels.put(METADATA_LABEL_RUN_NUMBER_KEY, runNumberAsString);
             labels.put(METADATA_LABEL_RUN_PIPE_KEY, runPipeName);
@@ -141,8 +146,11 @@ public class RunController implements ResourceController<RunResource> {
                  * Add the RUN_NUMBER and RUN_PIPE environment value to each Container in the Pods.
                  * NOTE: Pods can also take in parameters/args
                  * WARNING: These injected environment variables will override the ones in the container, if they have the same name
-                 * */
+                 */
                 List<EnvVar> envVarList = container.getEnv();
+                if (envVarList == null) {
+                    envVarList = new ArrayList<>();
+                }
                 envVarList.add(envVarRunNumber);
                 envVarList.add(envVarRunPipe);
                 container.setEnv(envVarList);
@@ -159,6 +167,7 @@ public class RunController implements ResourceController<RunResource> {
             String namespace = newRunDeployment.getMetadata().getNamespace();
             if (namespace == null || namespace.isEmpty()) {
                 namespace = "default";
+                newRunDeployment.getMetadata().setNamespace(namespace);
             }
             Deployment createdDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).create(newRunDeployment);
 
