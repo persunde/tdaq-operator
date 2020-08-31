@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webclient-tdaq
+  name: worker-tdaq
   namespace: default
 spec:
   selector:
     matchLabels:
-      run: webclient-tdaq
+      run: worker-tdaq
   replicas: 1
   template:
     metadata:
       labels:
-        run: webclient-tdaq
+        run: worker-tdaq
     spec:
       containers:
-        - name: webclient-tdaq
+        - name: worker-tdaq
           image: persundecern/webclient-tdaq
           resources:
             limits:

@@ -1,3 +1,6 @@
+# You can either change the yaml file and apply it, or create a new one.
+# The Operator will watch for ALL RunResource kind file
+# Just make sure, if you create a new file based on this, make sure to delete the old one, so that the Cluster contains too many old CustomResources taking up resources
 apiVersion: "operator.tdaq.cern.ch/v1"
 kind: RunResource
 metadata:
@@ -6,6 +9,6 @@ spec:
   name: to-be-changed-resource1
   label: to-be-changed-label
   runNumber: 0
-  runPipe:
+  runPipe: proton
 status:
   isRunFinished: false
