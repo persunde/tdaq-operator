@@ -13,7 +13,9 @@ spec:
       labels:
         run: worker-tdaq
     spec:
-      restartPolicy: OnFailure
+      # For a deployment, only "restartPolicy: Always" is supported
+      # See: https://github.com/kubernetes/kubernetes/issues/24725
+      restartPolicy: Always
       containers:
         - name: worker-tdaq
           image: persundecern/webclient-tdaq
