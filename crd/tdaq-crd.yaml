@@ -31,11 +31,11 @@ spec:
                   minimum: 0
                 runPipe:
                   type: string
-              status:
-                type: object
-                properties:
-                  isRunFinished:
-                    type: string
+            status:
+              type: object
+              properties:
+                isRunFinished:
+                  type: string
   # either Namespaced or Cluster
   scope: Namespaced
   names:
