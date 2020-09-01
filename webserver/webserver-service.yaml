@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: webserver-service
   labels:
-    app: webserver
+    app: webserver-tdaq
 spec:
   type: NodePort
   ports:
