@@ -1,6 +1,6 @@
 /**
  * This program is used to tell the K8S Pods to shutdown or not, based on their runNUmber that they send in as a GET param:
- * 
+ *
  * How to send a GET request:
  *  GET HOST:PORT/?run=<runNumber>
  */
@@ -22,8 +22,8 @@ server.on('request', async (req, res) => {
     totalCalls++;
 
     const response = JSON.stringify({"shutdown": shutdown, "totalCalls": totalCalls});
-    res.writeHead(200);
     res.setHeader('Content-Type', 'application/json');
+    res.writeHead(200);
     res.end(response);
 });
 

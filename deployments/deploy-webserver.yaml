@@ -16,6 +16,7 @@ spec:
       containers:
         - name: webserver-tdaq
           image: persundecern/webserver-tdaq
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           resources:
