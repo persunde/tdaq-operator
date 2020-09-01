@@ -11,7 +11,7 @@ spec:
       targetPort: 8080
       protocol: TCP
   selector:
-    app: webserver
+    app: webserver-tdaq
 
 
 # Can use the values found in Environment Variables
