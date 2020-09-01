@@ -20,14 +20,18 @@ spec:
           type: object
           properties:
             spec:
-              name: string
-              label: string
+              name:
+                type: string
+              label:
+                type: string
               runNumber:
                 type: integer
                 minimum: 0
-              runPipe: string
+              runPipe:
+                type: string
             status:
-              isRunFinished: string
+              isRunFinished:
+                type: string
   # either Namespaced or Cluster
   scope: Namespaced
   names:
