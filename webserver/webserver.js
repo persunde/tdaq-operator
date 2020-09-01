@@ -11,7 +11,8 @@ let totalCalls = 0;
 
 const server = http.createServer();
 server.on('request', async (req, res) => {
-    const newRunNumber = parseInt(req.query.run, 10);
+    const url = require('url');
+    const newRunNumber = parseInt(url.parse(req.url,true).query["run"], 10);
     let shutdown = false;
     if (latestRunNumber > newRunNumber) {
         shutdown = true;
