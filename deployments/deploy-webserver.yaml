@@ -6,12 +6,12 @@ metadata:
 spec:
   selector:
     matchLabels:
-      run: webserver-tdaq
+      app: webserver-tdaq
   replicas: 1
   template:
     metadata:
       labels:
-        run: webserver-tdaq
+        app: webserver-tdaq
     spec:
       containers:
         - name: webserver-tdaq
