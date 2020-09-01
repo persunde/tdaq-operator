@@ -4,6 +4,7 @@ public class RunResourceSpec {
     private String name;
     private int runNumber;
     private String runPipe;
+    private String label;
 
     public int getRunNumber() { return runNumber; }
     public void setRunNumber(int runNumber) { this.runNumber = runNumber; }
@@ -16,6 +17,13 @@ public class RunResourceSpec {
     }
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+    public void setLabel(String label) {
+        this.label = label;
     }
 }
 
