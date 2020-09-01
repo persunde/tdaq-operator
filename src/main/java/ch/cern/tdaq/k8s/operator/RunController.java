@@ -15,8 +15,13 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -27,7 +32,7 @@ import java.util.Map;
 public class RunController implements ResourceController<RunResource> {
     private final Logger log = LoggerFactory.getLogger(getClass());
     private final KubernetesClient kubernetesClient;
-    private final int runNumberPaddingSize = 100000;
+    private final int runNumberPaddingSize = 4;
 
     private static final String ENVIRONMENT_RUN_NUMBER_NAME = "RUN_NUMBER";
     private static final String ENVIRONMENT_RUN_PIPE_NAME = "RUN_PIPE";
@@ -190,7 +195,8 @@ public class RunController implements ResourceController<RunResource> {
      */
     public static void deleteFinishedDeployments(final KubernetesClient kubernetesClient) {
         /**
-         *  NOTE: If we query too many Pods at once (more than 10 000(???)), it could cause a timeout problem when we query the API Server
+         *  NOTE: If we query too many Pods at once (from 3000(?)-5000(?) and more. Not sure about the exact number),
+         *  it could cause a timeout problem when we query the API Server.
          *  The SIG-Scalability group should have some answers regarding this. Check out their video from KubeCon December/September 2018 on YouTube.
          *
          *  Instead we could query based on namespaces or more refined labels? But then we have to be sure we will not miss deployments for a certain run!
@@ -267,4 +273,23 @@ public class RunController implements ResourceController<RunResource> {
         return deploymentName.contains(formattedRunNumber);
     }
 
+    private String webserverGetRequest(int runNumber) throws IOException {
+        String service_host_ip = System.getenv("WEBSERVER_SERVICE_SERVICE_HOST");
+        String service_host_post = System.getenv("WEBSERVER_SERVICE_SERVICE_PORT");
+        String urlString = "http://" + service_host_ip + ":" + service_host_post + "/?run=" + Integer.toString(runNumber);
+        URL url = new URL(urlString);
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+
+        /* int status = con.getResponseCode(); */
+        BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        String inputLine;
+        StringBuffer content = new StringBuffer();
+        while ((inputLine = in.readLine()) != null) {
+            content.append(inputLine);
+        }
+        in.close();
+
+        return content.toString();
+    }
 }

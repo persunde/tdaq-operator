@@ -24,7 +24,7 @@ public class Main {
          * TODO: No loop per X second. Need to implement this! Ask the java-sdk guys in Discord for release info
          * Need this for deleting finished deployments!
          */
-        log.info("Runner PingJava Operator starting!");
+        log.info("Runner TDAQ Operator starting!");
 
         Config config = new ConfigBuilder().withNamespace(null).build();
         KubernetesClient client = new DefaultKubernetesClient(config);
