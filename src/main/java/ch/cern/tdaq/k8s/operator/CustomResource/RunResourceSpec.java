@@ -1,5 +1,11 @@
 package ch.cern.tdaq.k8s.operator.CustomResource;
 
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+@JsonDeserialize(
+        using = JsonDeserializer.None.class
+)
 public class RunResourceSpec {
     private String name;
     private int runNumber;

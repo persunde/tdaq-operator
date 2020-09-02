@@ -1,16 +1,27 @@
 package ch.cern.tdaq.k8s.operator;
 
+import ch.cern.tdaq.k8s.operator.CustomResource.DoneableRunResource;
 import ch.cern.tdaq.k8s.operator.CustomResource.RunResource;
+import ch.cern.tdaq.k8s.operator.CustomResource.RunResourceList;
+import ch.cern.tdaq.k8s.operator.CustomResource.RunResourceSpec;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.containersolutions.operator.api.Context;
 import com.github.containersolutions.operator.api.Controller;
 import com.github.containersolutions.operator.api.ResourceController;
 import com.github.containersolutions.operator.api.UpdateControl;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.api.model.Doneable;
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.apiextensions.CustomResourceDefinition;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentList;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.MixedOperation;
+import io.fabric8.kubernetes.client.dsl.Resource;
+import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 @Controller(customResourceClass = RunResource.class,
-        crdName = "runresources.operator.tdaq.cern.ch")
+        crdName = "runresources.operator.tdaq.cern.ch") /* NOTE! crdName needs to be in sync with the crd name used by the TdaqRunController and the actual CRD yaml file */
 public class RunController implements ResourceController<RunResource> {
     private final Logger log = LoggerFactory.getLogger(getClass());
     private final KubernetesClient kubernetesClient;
@@ -205,6 +216,7 @@ public class RunController implements ResourceController<RunResource> {
                 }
             }
         }
+        updateRuncontrollerCR(kubernetesClient);
     }
 
     /**
@@ -330,5 +342,42 @@ public class RunController implements ResourceController<RunResource> {
         in.close();
 
         return content.toString();
+    }
+
+    final static String RUN_NUMBER_MAP_KEY = "runNumber";
+    final static String RUN_CONTROLLER_CR_NAME = "runcontroller-cr";
+    private static void updateRuncontrollerCR(final KubernetesClient kubernetesClient) throws IOException {
+        final String crdName = "runresources.operator.tdaq.cern.ch";
+
+        CustomResourceDefinition runControllerCrd = kubernetesClient.customResourceDefinitions().withName(crdName).get();
+        CustomResourceDefinitionContext context = CustomResourceDefinitionContext.fromCrd(runControllerCrd);
+
+        MixedOperation<RunResource, RunResourceList, DoneableRunResource, Resource<RunResource, DoneableRunResource>> crClient = kubernetesClient
+                .customResources(context, RunResource.class, RunResourceList.class, DoneableRunResource.class);
+
+        /**
+         * Note: CR's can be cluster wide or in a given namespace. If we want to use more than one namespace, we need to get the correct namespace here
+         */
+        /**
+         * This did not work for some reason...??? I have to use the "Typeless API" instead of the "Typed API"
+         */
+//        RunResource customResource = crClient.inNamespace("default").withName("runcontroller-cr").get(); /* TODO: fix how to get a generic runcontroller CR, name can change. Use label or something */
+//        RunResourceSpec spec = customResource.getSpec();
+//        int nextRunNumber = spec.getRunNumber() + 1;
+//        spec.setRunNumber(nextRunNumber);
+
+        /* TODO: set some status, like "LastUpdate" in the RunControllerCustomResource's status*/
+        /* Update the CR with the new data aka new RunNumber */
+        /* customResource = crClient.inNamespace("default").updateStatus(customResource); */
+
+        //crClient.createOrReplace(customResource);
+        //crClient.updateStatus(customResource);
+
+        Map<String, Object> runcontrollerCR = kubernetesClient.customResource(context).get("default", RUN_CONTROLLER_CR_NAME);
+
+
+        int newRunNumber = 1 + (int) ((HashMap<String, Object>) runcontrollerCR.get("spec")).getOrDefault(RUN_NUMBER_MAP_KEY, -1); /* Not yet tested */
+        ((HashMap<String, Object>)runcontrollerCR.get("spec")).put(RUN_NUMBER_MAP_KEY, newRunNumber);
+        runcontrollerCR = kubernetesClient.customResource(context).edit("default", RUN_CONTROLLER_CR_NAME, new ObjectMapper().writeValueAsString(runcontrollerCR));
     }
 }
