@@ -216,7 +216,7 @@ public class RunController implements ResourceController<RunResource> {
                 }
             }
         }
-        updateRuncontrollerCR(kubernetesClient);
+//        updateRuncontrollerCR(kubernetesClient);
     }
 
     /**
