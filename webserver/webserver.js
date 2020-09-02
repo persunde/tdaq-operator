@@ -22,7 +22,7 @@ server.on('request', async (req, res) => {
 
     totalCalls++;
 
-    const response = JSON.stringify({"shutdown": shutdown, "totalCalls": totalCalls});
+    const response = JSON.stringify({"shutdown": shutdown, "totalCalls": totalCalls, "latestRunNumber": latestRunNumber});
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
     res.end(response);
