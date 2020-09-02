@@ -15,7 +15,7 @@ url = "http://" + WEBSERVER_SERVICE_SERVICE_HOST + ":" + WEBSERVER_SERVICE_SERVI
 while True:  
     contents = urllib.request.urlopen(url).read()
     json_content = json.loads(contents)
-    if json_content["shutdown"] == "true" or json_content["shutdown"] == "True":
+    if json_content["shutdown"]:
         exit(os.EX_OK)
     # Sleep random time in range [4, 30), increments steps by 2
     sleep_time = randrange(4, 30, 2)

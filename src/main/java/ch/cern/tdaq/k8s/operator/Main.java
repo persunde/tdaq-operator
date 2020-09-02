@@ -50,6 +50,8 @@ public class Main {
                     e.printStackTrace();
                 } catch (RuntimeException e) {
                     e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             }
         };

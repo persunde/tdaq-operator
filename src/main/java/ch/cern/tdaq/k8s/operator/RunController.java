@@ -1,11 +1,11 @@
 package ch.cern.tdaq.k8s.operator;
 
 import ch.cern.tdaq.k8s.operator.CustomResource.RunResource;
-
 import com.github.containersolutions.operator.api.Context;
 import com.github.containersolutions.operator.api.Controller;
 import com.github.containersolutions.operator.api.ResourceController;
 import com.github.containersolutions.operator.api.UpdateControl;
+import com.google.gson.JsonParser;
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -183,7 +182,40 @@ public class RunController implements ResourceController<RunResource> {
         }
     }
 
+
+    public static void deleteFinishedDeployments(final KubernetesClient kubernetesClient) throws IOException {
+        int latestRunNumber = getLatestRunNumberFromWebserver();
+        DeploymentList deploymentList = kubernetesClient.apps().deployments().inAnyNamespace().withLabel(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE).list();
+        for (Deployment deployment : deploymentList.getItems()) {
+            Map<String, String> labels = deployment.getMetadata().getLabels();
+            String deploymentRunNumberString = labels.getOrDefault(METADATA_LABEL_RUN_NUMBER_KEY, null);
+            /* First, check if the deployment contains the runNumber label */
+            if (deploymentRunNumberString != null) {
+                /* Secondly, check if the deployment's runNumber is lower than the latest runNumber, if so then delete the deployment */
+                int deploymentRunNumber = Integer.parseInt(deploymentRunNumberString);
+                if (deploymentRunNumber < latestRunNumber) {
+                    String deploymentName = deployment.getMetadata().getName();
+                    String namespace = deployment.getMetadata().getNamespace();
+                    Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
+                    if (!isDeleted) {
+                        /**
+                         * TODO: What to do on failure to delete Deployment? Just accept for now and try again later?
+                         */
+                    }
+                }
+            }
+        }
+    }
+
     /**
+     * NOTE: This model to delete Deployments and Pods does NOT work with the current K8S versions.
+     * K8S does NOT allow pods in a deployment to stop on itself. You must set "restartPolicy: Always", no other
+     * options are allowed, setting a different restartPolicy is only allowed for Pods running outside of a
+     * Deployment or Replicaset. Check out the github issue to see if there is any changes made regarding this:
+     * For a deployment, only the "restartPolicy: Always" is supported, a Pod spec supports [Always, OnFailure, Never]
+     * See: https://github.com/kubernetes/kubernetes/issues/24725#issuecomment-214513280
+     *
+     *
      * Deletes all deployments where all the pods are finished running.
      * NOTE: We assume the Pods terminate and are not rebooted after they exit/are finished. Probably use policy: OnFailure. Read more here:
      *  https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
@@ -193,7 +225,7 @@ public class RunController implements ResourceController<RunResource> {
      *  See: https://github.com/ContainerSolutions/java-operator-sdk/issues/157
      *  Set the function back to private, once it is looping as part of createOrUpdateResource()!
      */
-    public static void deleteFinishedDeployments(final KubernetesClient kubernetesClient) {
+    public static void deleteFinishedDeploymentsOld(final KubernetesClient kubernetesClient) {
         /**
          *  NOTE: If we query too many Pods at once (from 3000(?)-5000(?) and more. Not sure about the exact number),
          *  it could cause a timeout problem when we query the API Server.
@@ -207,6 +239,7 @@ public class RunController implements ResourceController<RunResource> {
              * TODO: Test which of these replica count values are the one I want to use!?
              */
             try {
+
                 Integer currentReplicas = deployment.getStatus().getReplicas(); /* This should be currently running, bad and good. Probably the one I want, but make sure and test it!! */
                 /*
                 deployment.getStatus().getAvailableReplicas();
@@ -273,7 +306,13 @@ public class RunController implements ResourceController<RunResource> {
         return deploymentName.contains(formattedRunNumber);
     }
 
-    private String webserverGetRequest(int runNumber) throws IOException {
+    private static int getLatestRunNumberFromWebserver() throws IOException {
+        String json = webserverGetRequest(-1);
+        JsonParser parser = new JsonParser();
+        return parser.parse(json).getAsJsonObject().get("latestRunNumber").getAsInt();
+    }
+
+    private static String webserverGetRequest(int runNumber) throws IOException {
         String service_host_ip = System.getenv("WEBSERVER_SERVICE_SERVICE_HOST");
         String service_host_post = System.getenv("WEBSERVER_SERVICE_SERVICE_PORT");
         String urlString = "http://" + service_host_ip + ":" + service_host_post + "/?run=" + Integer.toString(runNumber);
