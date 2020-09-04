@@ -39,24 +39,24 @@ public class Main {
          * NOTE: This should be replaced and removed when looping based on time interval is supported by java-operator-sdk ... Coming Soon TM...?
          *  See: https://github.com/ContainerSolutions/java-operator-sdk/issues/157
          */
-        Runnable runnable = () -> {
-            Config config2 = new ConfigBuilder().withNamespace(null).build();
-            KubernetesClient kubernetesClient = new DefaultKubernetesClient(config2);
-            while (true) {
-                try {
-                    Thread.sleep(30 * 1000);
-                    RunController.deleteFinishedDeployments(kubernetesClient);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (RuntimeException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        };
-        Thread t = new Thread(runnable);
-        t.start();
+//        Runnable runnable = () -> {
+//            Config config2 = new ConfigBuilder().withNamespace(null).build();
+//            KubernetesClient kubernetesClient = new DefaultKubernetesClient(config2);
+//            while (true) {
+//                try {
+//                    Thread.sleep(30 * 1000);
+//                    RunController.deleteFinishedDeployments(kubernetesClient);
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                } catch (RuntimeException e) {
+//                    e.printStackTrace();
+//                } catch (IOException e) {
+//                    e.printStackTrace();
+//                }
+//            }
+//        };
+//        Thread t = new Thread(runnable);
+//        t.start();
 
         /**
          * The health check status endpoint. Needs to return 200 OK to signal K8S that it is OK (or not)
