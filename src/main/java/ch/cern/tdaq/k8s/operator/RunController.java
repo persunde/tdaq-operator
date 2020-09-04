@@ -11,6 +11,7 @@ import com.github.containersolutions.operator.api.UpdateControl;
 import com.google.gson.JsonParser;
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apiextensions.CustomResourceDefinition;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentList;
@@ -139,6 +140,10 @@ public class RunController implements ResourceController<RunResource> {
             Deployment oldDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).get();
             /* Checks if the deployment already exists, if so, do nothing */
             if (oldDeployment == null) {
+                String serviceNamespace = "default";
+                String serviceName = "webserver-service";
+                Service service = kubernetesClient.services().inNamespace(serviceNamespace).withName(serviceName).get();
+
                 /* Set the metadata labels tdaq.run-number and tdaq.run-pipe for this deployment */
                 Map<String, String> labels = newRunDeployment.getMetadata().getLabels();
                 if (labels == null) {
@@ -156,6 +161,14 @@ public class RunController implements ResourceController<RunResource> {
                 EnvVar envVarRunPipe = new EnvVar();
                 envVarRunPipe.setName(ENVIRONMENT_RUN_PIPE_NAME);
                 envVarRunPipe.setValue(runPipeName);
+
+                /* Add the Service IP:PORT to the Pods, since they are not automatically available since the Pods are in a different namespace than the Service */
+                EnvVar envVarRunServiceHost = new EnvVar();
+                envVarRunServiceHost.setName("WEBSERVER_SERVICE_SERVICE_HOST");
+                envVarRunServiceHost.setValue(service.getSpec().getClusterIP());
+                EnvVar envVarRunServicePort = new EnvVar();
+                envVarRunServicePort.setName("WEBSERVER_SERVICE_SERVICE_PORT");
+                envVarRunServicePort.setValue(String.valueOf(service.getSpec().getPorts().get(0).getPort()));
 
                 List<Container> containerList = newRunDeployment.getSpec().getTemplate().getSpec().getContainers();
                 for (Container container : containerList) {
