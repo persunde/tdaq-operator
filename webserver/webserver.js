@@ -22,7 +22,8 @@ server.on('request', async (req, res) => {
 
     totalCalls++;
 
-    const response = JSON.stringify({"shutdown": shutdown, "totalCalls": totalCalls, "latestRunNumber": latestRunNumber});
+    //const response = JSON.stringify({"shutdown": shutdown, "totalCalls": totalCalls, "latestRunNumber": latestRunNumber});
+    const response = JSON.stringify({"shutdown": false, "totalCalls": totalCalls, "latestRunNumber": latestRunNumber});
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
     res.end(response);
