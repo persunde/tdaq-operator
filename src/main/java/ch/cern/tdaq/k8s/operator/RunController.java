@@ -183,6 +183,8 @@ public class RunController implements ResourceController<RunResource> {
                     }
                     envVarList.add(envVarRunNumber);
                     envVarList.add(envVarRunPipe);
+                    envVarList.add(envVarRunServiceHost);
+                    envVarList.add(envVarRunServicePort);
                     container.setEnv(envVarList);
                 }
 
