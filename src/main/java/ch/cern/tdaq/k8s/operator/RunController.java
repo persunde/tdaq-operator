@@ -3,17 +3,13 @@ package ch.cern.tdaq.k8s.operator;
 import ch.cern.tdaq.k8s.operator.CustomResource.DoneableRunResource;
 import ch.cern.tdaq.k8s.operator.CustomResource.RunResource;
 import ch.cern.tdaq.k8s.operator.CustomResource.RunResourceList;
-import ch.cern.tdaq.k8s.operator.CustomResource.RunResourceSpec;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.containersolutions.operator.api.Context;
 import com.github.containersolutions.operator.api.Controller;
 import com.github.containersolutions.operator.api.ResourceController;
 import com.github.containersolutions.operator.api.UpdateControl;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.fabric8.kubernetes.api.model.Container;
-import io.fabric8.kubernetes.api.model.Doneable;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.apiextensions.CustomResourceDefinition;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
@@ -42,7 +38,7 @@ import java.util.Map;
 public class RunController implements ResourceController<RunResource> {
     private final Logger log = LoggerFactory.getLogger(getClass());
     private final KubernetesClient kubernetesClient;
-    private final int runNumberPaddingSize = 4;
+    private final int runNumberPaddingSize = 10;
 
     private static final String ENVIRONMENT_RUN_NUMBER_NAME = "RUN_NUMBER";
     private static final String ENVIRONMENT_RUN_PIPE_NAME = "RUN_PIPE";
@@ -66,6 +62,7 @@ public class RunController implements ResourceController<RunResource> {
     public UpdateControl createOrUpdateResource(RunResource resource, Context<RunResource> context) {
         log.info("Execution createOrUpdateResource for: {}", resource.getMetadata().getName());
 
+        String namespace = resource.getMetadata().getNamespace();
         int latestRunNumber = resource.getSpec().getRunNumber();
         String latestRunPipe = resource.getSpec().getRunPipe();
 
@@ -75,16 +72,14 @@ public class RunController implements ResourceController<RunResource> {
         boolean lastTry = context.retryInfo().isLastAttempt();
 
         /* Only run a new deployment, if the CR has a new RunNumber value (aka a higher value than in any current deployment) */
-        int latestRunNumberDeployed = getLatestDeploymentRunNumberDeployed();
-        if (latestRunNumberDeployed < latestRunNumber) {
-            try {
-                createNewDeployment(latestRunNumber, latestRunPipe);
-            } catch (IOException e) {
-                e.printStackTrace();
-                log.error("createOrReplaceDeployment failed", e);
-                /* Throwing an error should cause a new call to createOrUpdateResource() after a backoff period. Double check! */
-                throw new RuntimeException(e);
-            }
+//        int latestRunNumberDeployed = getLatestDeploymentRunNumberDeployed();
+        try {
+            createNewDeploymentIfNotExist(namespace, latestRunNumber, latestRunPipe);
+        } catch (IOException e) {
+            e.printStackTrace();
+            log.error("createOrReplaceDeployment failed", e);
+            /* Throwing an error should cause a new call to createOrUpdateResource() after a backoff period. Double check! */
+            throw new RuntimeException(e);
         }
 
         /* Deletes all deployments where all the Pods in the deployment have finished/exited */
@@ -128,65 +123,66 @@ public class RunController implements ResourceController<RunResource> {
      * It modifies the deployment yaml file, by changing the name to include the RunNumber, and adds labels for the RunNumber and RunPipe.
      * Inserts Environment variables to all the containers in each Pod, so that they have access to the RUN_NUMBER and RUN_PIPE inside the application.
      * NOTE: You can use parameters/args to inject the RUN_NUMBER and RUN_PIPE values as well. Very easy to do.
+     * @param namespace The namespace that will be used for the deployment
      * @param runNumber The current RunNumber as fetched from the CR
      * @param runPipeName The current RunPipe type as fetched from the CR
-     * @throws IOException If unable to read the yaml file from /resources
+     * @throws IOException If unable to read the yaml file from the resources directory
      */
-    private void createNewDeployment(int runNumber, @NotNull String runPipeName) throws IOException {
+    private void createNewDeploymentIfNotExist(@NotNull String namespace, int runNumber, @NotNull String runPipeName) throws IOException {
         String deploymentYamlPath = "deploy-worker.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
         try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
             Deployment newRunDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
 
-            /* Set the metadata labels tdaq.run-number and tdaq.run-pipe for this deployment */
-            Map<String, String> labels = newRunDeployment.getMetadata().getLabels();
-            if (labels == null) {
-                labels = new HashMap<>();
-            }
-            final String runNumberAsString = Integer.toString(runNumber);
-            labels.put(METADATA_LABEL_RUN_NUMBER_KEY, runNumberAsString);
-            labels.put(METADATA_LABEL_RUN_PIPE_KEY, runPipeName);
-            labels.put(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE);
-            newRunDeployment.getMetadata().setLabels(labels);
-
-            EnvVar envVarRunNumber = new EnvVar();
-            envVarRunNumber.setName(ENVIRONMENT_RUN_NUMBER_NAME);
-            envVarRunNumber.setValue(Integer.toString(runNumber));
-            EnvVar envVarRunPipe = new EnvVar();
-            envVarRunPipe.setName(ENVIRONMENT_RUN_PIPE_NAME);
-            envVarRunPipe.setValue(runPipeName);
-
-            List<Container> containerList = newRunDeployment.getSpec().getTemplate().getSpec().getContainers();
-            for (Container container : containerList) {
-                /**
-                 * Add the RUN_NUMBER and RUN_PIPE environment value to each Container in the Pods.
-                 * NOTE: Pods can also take in parameters/args
-                 * WARNING: These injected environment variables will override the ones in the container, if they have the same name
-                 */
-                List<EnvVar> envVarList = container.getEnv();
-                if (envVarList == null) {
-                    envVarList = new ArrayList<>();
-                }
-                envVarList.add(envVarRunNumber);
-                envVarList.add(envVarRunPipe);
-                container.setEnv(envVarList);
-            }
-
-            /**
-             * TODO: Check if you need to set the containerList for the workerDeployment as well, or if only setting the Env in the containers is enough
-             */
-
             /* Set the deployment name to include the RunNumber and be unique to not overwrite the other deployments */
-            String newRunDeploymentName = generateNewRunDeploymentName(newRunDeployment, runNumber, runPipeName);
-            newRunDeployment.getMetadata().setName(newRunDeploymentName);
+            String deploymentName = generateNewRunDeploymentName(newRunDeployment, runNumber, runPipeName);
 
-            String namespace = newRunDeployment.getMetadata().getNamespace();
-            if (namespace == null || namespace.isEmpty()) {
-                namespace = "default";
+            Deployment oldDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).get();
+            /* Checks if the deployment already exists, if so, do nothing */
+            if (oldDeployment == null) {
+                /* Set the metadata labels tdaq.run-number and tdaq.run-pipe for this deployment */
+                Map<String, String> labels = newRunDeployment.getMetadata().getLabels();
+                if (labels == null) {
+                    labels = new HashMap<>();
+                }
+                final String runNumberAsString = Integer.toString(runNumber);
+                labels.put(METADATA_LABEL_RUN_NUMBER_KEY, runNumberAsString);
+                labels.put(METADATA_LABEL_RUN_PIPE_KEY, runPipeName);
+                labels.put(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE);
+                newRunDeployment.getMetadata().setLabels(labels);
+
+                EnvVar envVarRunNumber = new EnvVar();
+                envVarRunNumber.setName(ENVIRONMENT_RUN_NUMBER_NAME);
+                envVarRunNumber.setValue(Integer.toString(runNumber));
+                EnvVar envVarRunPipe = new EnvVar();
+                envVarRunPipe.setName(ENVIRONMENT_RUN_PIPE_NAME);
+                envVarRunPipe.setValue(runPipeName);
+
+                List<Container> containerList = newRunDeployment.getSpec().getTemplate().getSpec().getContainers();
+                for (Container container : containerList) {
+                    /**
+                     * Add the RUN_NUMBER and RUN_PIPE environment value to each Container in the Pods.
+                     * NOTE: Pods can also take in parameters/args
+                     * WARNING: These injected environment variables will override the ones in the container, if they have the same name
+                     */
+                    List<EnvVar> envVarList = container.getEnv();
+                    if (envVarList == null) {
+                        envVarList = new ArrayList<>();
+                    }
+                    envVarList.add(envVarRunNumber);
+                    envVarList.add(envVarRunPipe);
+                    container.setEnv(envVarList);
+                }
+
+                newRunDeployment.getMetadata().setName(deploymentName);
+
+                if (namespace == null || namespace.isEmpty()) {
+                    namespace = "default";
+                }
                 newRunDeployment.getMetadata().setNamespace(namespace);
-            }
-            Deployment createdDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).create(newRunDeployment);
+                Deployment createdDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).create(newRunDeployment);
 
-            log.info("Created deployment: {}", deploymentYamlPath);
+                log.info("Created deployment: {}", deploymentYamlPath);
+            }
         } catch (IOException ex) {
             log.error("createOrReplaceDeployment failed", ex);
             throw ex;
