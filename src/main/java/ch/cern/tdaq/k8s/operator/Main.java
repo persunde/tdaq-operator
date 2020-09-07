@@ -19,6 +19,11 @@ public class Main {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
 
+    /**
+     * The main entry point for the Operator, this is where it start.
+     * @param args Not used
+     * @throws IOException When it fails to create the thread for the Health check endpoint.
+     */
     public static void main(String[] args) throws IOException {
         /**
          * TODO: No loop per X second. Need to implement this! Ask the java-sdk guys in Discord for release info

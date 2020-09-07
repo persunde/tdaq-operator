@@ -49,33 +49,73 @@ public class RunController implements ResourceController<RunResource> {
     private static final String METADATA_LABEL_TDAQ_WORKER_KEY = "tdaq.worker";
     private static final String METADATA_LABEL_TDAQ_WORKER_VALUE = "true";
 
+    final private String deploymentYamlPath = "deploy-worker.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
+
     @NotNull
     public RunController(KubernetesClient kubernetesClient) {
         this.kubernetesClient = kubernetesClient;
     }
 
+    /**
+     * The function called by the Java-Operator-SDK framework when a CR is DELETED.
+     * @param resource
+     * @param context
+     * @return
+     */
     @Override
-    public boolean deleteResource(RunResource runResource, Context<RunResource> context) {
-        return false;
+    public boolean deleteResource(RunResource resource, Context<RunResource> context) {
+        log.info("Execution deleteResource for: {}", resource.getMetadata().getName());
+
+        /* TODO: Might want to do something particular if it is the last try? */
+        boolean lastTry = context.retryInfo().isLastAttempt();
+
+        String namespace = resource.getMetadata().getNamespace();
+        int runNumber = resource.getSpec().getRunNumber();
+        String runPipeName = resource.getSpec().getRunPipe();
+
+        try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
+            /* Need to use the deployment yaml template to get the deployment name */
+            Deployment runDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
+
+            /* Get the deployment name for the deployment related to this CR */
+            String deploymentName = getRunDeploymentName(runDeployment, runNumber, runPipeName);
+
+            /* If true, then the Deployment is deleted. If false, then the Java-Operator-SDK will try again until lastTry is true. These values can be configured in Main */
+            boolean customResourceDeleted = deleteDeployments(namespace, deploymentName);
+            if (customResourceDeleted) {
+                /* Delete the Namespace if it now contains no more Deployments */
+                /* NOTE: If it fails to delete the Namespace, it will not try again. On fail, you will have to delete the namespace manually. */
+                deleteNamespaceIfEmpty(namespace);
+            }
+            return customResourceDeleted;
+        } catch (IOException e) {
+            e.printStackTrace();
+            log.error("Exception when trying to to delete the CustomResource", e);
+            return false;
+        }
     }
 
+    /**
+     * The function called by the Java-Operator-SDK framework when a CR is CREATED or UPDATED/CHANGED.
+     * @param resource
+     * @param context
+     * @return
+     */
     @Override
     public UpdateControl createOrUpdateResource(RunResource resource, Context<RunResource> context) {
         log.info("Execution createOrUpdateResource for: {}", resource.getMetadata().getName());
 
         String namespace = resource.getMetadata().getNamespace();
-        int latestRunNumber = resource.getSpec().getRunNumber();
-        String latestRunPipe = resource.getSpec().getRunPipe();
+        int runNumber = resource.getSpec().getRunNumber();
+        String runPipe = resource.getSpec().getRunPipe();
 
-        /**
-         * TODO: Might want to do something particular if it is the last try.
-         */
+        /* TODO: Might want to do something particular if it is the last try. */
         boolean lastTry = context.retryInfo().isLastAttempt();
 
         /* Only run a new deployment, if the CR has a new RunNumber value (aka a higher value than in any current deployment) */
 //        int latestRunNumberDeployed = getLatestDeploymentRunNumberDeployed();
         try {
-            createNewDeploymentIfNotExist(namespace, latestRunNumber, latestRunPipe);
+            createNewDeploymentIfNotExist(namespace, runNumber, runPipe);
         } catch (IOException e) {
             e.printStackTrace();
             log.error("createOrReplaceDeployment failed", e);
@@ -130,12 +170,11 @@ public class RunController implements ResourceController<RunResource> {
      * @throws IOException If unable to read the yaml file from the resources directory
      */
     private void createNewDeploymentIfNotExist(@NotNull String namespace, int runNumber, @NotNull String runPipeName) throws IOException {
-        String deploymentYamlPath = "deploy-worker.yaml"; /* Should we let the users use their own yaml, or yaml that is part of the JAR under /resources ? */
         try (InputStream yamlInputStream = getClass().getResourceAsStream(deploymentYamlPath)) {
             Deployment newRunDeployment = kubernetesClient.apps().deployments().load(yamlInputStream).get();
 
             /* Set the deployment name to include the RunNumber and be unique to not overwrite the other deployments */
-            String deploymentName = generateNewRunDeploymentName(newRunDeployment, runNumber, runPipeName);
+            String deploymentName = getRunDeploymentName(newRunDeployment, runNumber, runPipeName);
 
             Deployment oldDeployment = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).get();
             /* Checks if the deployment already exists, if so, do nothing */
@@ -205,29 +244,42 @@ public class RunController implements ResourceController<RunResource> {
     }
 
 
-    public static void deleteFinishedDeployments(final KubernetesClient kubernetesClient) throws IOException {
-        int latestRunNumber = getLatestRunNumberFromWebserver();
-        DeploymentList deploymentList = kubernetesClient.apps().deployments().inAnyNamespace().withLabel(METADATA_LABEL_TDAQ_WORKER_KEY, METADATA_LABEL_TDAQ_WORKER_VALUE).list();
-        for (Deployment deployment : deploymentList.getItems()) {
-            Map<String, String> labels = deployment.getMetadata().getLabels();
-            String deploymentRunNumberString = labels.getOrDefault(METADATA_LABEL_RUN_NUMBER_KEY, null);
-            /* First, check if the deployment contains the runNumber label */
-            if (deploymentRunNumberString != null) {
-                /* Secondly, check if the deployment's runNumber is lower than the latest runNumber, if so then delete the deployment */
-                int deploymentRunNumber = Integer.parseInt(deploymentRunNumberString);
-                if (deploymentRunNumber < latestRunNumber) {
-                    String deploymentName = deployment.getMetadata().getName();
-                    String namespace = deployment.getMetadata().getNamespace();
-                    Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
-                    if (!isDeleted) {
-                        /**
-                         * TODO: What to do on failure to delete Deployment? Just accept for now and try again later?
-                         */
-                    }
-                }
+    /**
+     * Tries to delete the Deployment that matches the namespace and deploymentName
+     * @param namespace The namespace of the deployment
+     * @param deploymentName The actual name of the deployment
+     * @return True on success, False when failed to delete the Deployment from the cluster
+     */
+    private boolean deleteDeployments(String namespace, String deploymentName) {
+        Boolean isDeleted = kubernetesClient.apps().deployments().inNamespace(namespace).withName(deploymentName).delete();
+        if (isDeleted == null) {
+            isDeleted = false;
+        }
+        if (isDeleted) {
+            log.info("Namespace: {} Deployment: {} is successfully deleted", namespace, deploymentName);
+        } else {
+            log.warn("Namespace: {} Deployment: {} was NOT deleted", namespace, deploymentName);
+        }
+        return isDeleted;
+    }
+
+
+    private boolean deleteNamespaceIfEmpty(String namespace) {
+        Boolean isDeleted = false;
+        DeploymentList aDeploymentList = kubernetesClient.apps().deployments().inNamespace(namespace).list();
+        if (aDeploymentList.getItems().isEmpty()) {
+            isDeleted = kubernetesClient.namespaces().withName(namespace).delete();
+            if (isDeleted == null) {
+                isDeleted = false;
+            }
+            if (isDeleted) {
+                log.info("Namespace: {} is successfully deleted", namespace);
+            } else {
+                log.warn("Namespace: {} was NOT deleted", namespace);
             }
         }
-//        updateRuncontrollerCR(kubernetesClient);
+
+        return isDeleted;
     }
 
     /**
@@ -297,8 +349,18 @@ public class RunController implements ResourceController<RunResource> {
         }
     }
 
+    /**
+     * Used to create a name that makes it easy to identify which run this deployment belongs to.
+     * This must be used when CREATING a new deployment and when DELETING the same deployment.
+     * The name will be in this format, where N is a number [0-9]:
+     *  <template-deployment-name>-<NNNNNNNNNN>-<runType>
+     * @param deployment
+     * @param currentRunNumber
+     * @param runPipeName
+     * @return
+     */
     @NotNull
-    private String generateNewRunDeploymentName(Deployment deployment, int currentRunNumber, String runPipeName) {
+    private String getRunDeploymentName(Deployment deployment, int currentRunNumber, String runPipeName) {
         String formattedRunNumber = String.format("%0" + runNumberPaddingSize + "d", currentRunNumber);
         return deployment.getMetadata().getName() + "-" + formattedRunNumber + "-" + runPipeName;
     }
